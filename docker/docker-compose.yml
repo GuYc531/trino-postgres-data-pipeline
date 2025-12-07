@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  trino:
+    image: trinodb/trino:latest
+    container_name: trino
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./trino/etc:/etc/trino
+    depends_on:
+      - postgres
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/v1/info" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  pipeline:
+    build:
+      context: ..
+      dockerfile: docker/app/Dockerfile
+    container_name: pipeline
+    depends_on:
+      - postgres
+      - trino
+    volumes:
+      - ../src:/app/src
+
+volumes:
+  pg_data:
