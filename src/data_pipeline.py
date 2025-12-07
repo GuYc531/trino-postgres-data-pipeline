@@ -52,6 +52,7 @@ trino_conn = connect(
 
 cursor = trino_conn.cursor()
 
+
 query = """
 SELECT 
     id,
