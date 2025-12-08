@@ -1,40 +1,47 @@
-import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from trino.dbapi import connect
-import time
-
-print("started pipe")
+import logging
+from utils import utils
 
 POSTGRES_URL = "postgresql://admin:admin@postgres:5432/demo"
-# POSTGRES_URL = "postgresql://admin:admin@localhost:5432/demo"
+POSTGRES_URL = "postgresql://admin:admin@localhost:5432/demo"
+SPACEX_LATEST_URL = "https://api.spacexdata.com/v5/launches/latest"
+TABLE_NAME = "spacex_latest"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+logger.info("started pipe")
+
 engine = create_engine(POSTGRES_URL)
 
+u = utils(logger=logger, url=SPACEX_LATEST_URL, engine=engine, table_name=TABLE_NAME, )
+logger.info("initialized utils object")
 
 # --------------------------------
 # 1. Insert Example Data
 # --------------------------------
 
-df = pd.DataFrame({
-    "id": [1, 2, 1, 3, 2],
-    "score": [10, 20, 30, 40, 50]
-})
+data = u.fetch_latest_spacex_data()
+flatten_data = u.flatten_json()
+flatten_data['window_col'] = flatten_data.pop('window')  # saved word in postgres need to be changed
 
+ddl_sql = u.load_query("create_launches_table.sql")
+ddl_sql = ddl_sql.replace("table_name", TABLE_NAME)
+u.execute_query(query=ddl_sql)
 
-rows = df.to_dict(orient="records")
+columns_names, columns_names_for_ingest = u.get_table_columns()
 
-query = """
-INSERT INTO scores (id, score)
-VALUES (:id, :score)
-"""
-create_query = """
-CREATE TABLE IF NOT EXISTS scores  (
-    id int,
-    score int
-) ;"""
+insert_query = u.load_query("insert_new_data.sql")
+insert_query = insert_query.replace("table_name", TABLE_NAME,
+                                    ).replace("columns_names_for_ingest",
+                                              columns_names_for_ingest).replace(
+    "columns_names", columns_names)
 
-with engine.begin() as conn:
-    conn.execute(text(create_query))
-    conn.execute(text(query), rows)
+u.execute_query(query=insert_query, added_data=flatten_data)
 
 print("Inserted data into Postgres!")
 
@@ -51,7 +58,6 @@ trino_conn = connect(
 )
 
 cursor = trino_conn.cursor()
-
 
 query = """
 SELECT 
