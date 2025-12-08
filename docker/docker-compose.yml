@@ -38,10 +38,8 @@ services:
     build:
       context: ..
       dockerfile: docker/app/Dockerfile
-    environment:
-      - POSTGRES_URL=postgresql://admin:admin@postgres:5432/demo
-      - SPACEX_LATEST_URL=https://api.spacexdata.com/v5/launches/latest
-      - TABLE_NAME=spacex_latest
+    env_file:
+      - ../src/.env
     container_name: pipeline
     depends_on:
       - postgres

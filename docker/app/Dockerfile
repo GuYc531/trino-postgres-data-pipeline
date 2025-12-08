@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/data_pipeline.py data_pipeline.py
 COPY src/utils.py utils.py
+COPY src/config_handler.py config_handler.py
 COPY sql/* sql/
+
 
 CMD ["python", "data_pipeline.py"]
