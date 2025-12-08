@@ -1,5 +1,16 @@
 # trino-postgres-data-pipeline
 
+## assumptions
+
+## setup instructions
+
+## design choices
+
+## tests
+### ingestion
+### aggrigation
+
+
 ### further improvments
 
 1. set up a git repo for the sql/ folder to be able to change the queries without update the image
