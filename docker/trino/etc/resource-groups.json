@@ -1,0 +1,19 @@
+{
+  "rootGroups": [
+    {
+      "name": "global",
+      "maxQueued": 2,
+      "hardConcurrencyLimit": 3,
+      "softConcurrencyLimit": 5,
+      "schedulingPolicy": "fair",
+      "subGroups": []
+    }
+  ],
+  "selectors": [
+    {
+      "user": ".*",
+      "group": "global"
+    }
+  ],
+  "cpuQuotaPeriod": "1h"
+}

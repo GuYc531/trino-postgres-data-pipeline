@@ -1,12 +1,25 @@
-from sqlalchemy import create_engine
+from datetime import datetime
+
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text, Engine, inspect
 from trino.dbapi import connect
 import logging
 from utils import utils
+import os
+import pandas as pd
 
-POSTGRES_URL = "postgresql://admin:admin@postgres:5432/demo"
-POSTGRES_URL = "postgresql://admin:admin@localhost:5432/demo"
-SPACEX_LATEST_URL = "https://api.spacexdata.com/v5/launches/latest"
-TABLE_NAME = "spacex_latest"
+load_dotenv()
+POSTGRES_URL = os.getenv('POSTGRES_URL')
+LAUNCHES_LATEST_URL = os.getenv('LAUNCHES_LATEST_URL')
+PAYLOADS_URL = os.getenv('PAYLOADS_URL')
+LAUNCHPADS_URL = os.getenv('LAUNCHPADS_URL')
+LANDPADS_URL = os.getenv('LANDPADS_URL')
+LAUNCHES_HISTORY_URL = os.getenv('LAUNCHES_HISTORY_URL')
+LAUNCHES_TABLE_NAME = os.getenv('LAUNCHES_TABLE_NAME')
+PAYLOADS_TABLE_NAME = os.getenv('PAYLOADS_TABLE_NAME')
+LAUNCHPADS_TABLE_NAME = os.getenv('LAUNCHPADS_TABLE_NAME')
+LANDPADS_TABLE_NAME = os.getenv('LANDPADS_TABLE_NAME')
+AGG_TABLE_NAME = os.getenv('AGG_TABLE_NAME')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,37 +31,33 @@ logger.info("started pipe")
 
 engine = create_engine(POSTGRES_URL)
 
-u = utils(logger=logger, url=SPACEX_LATEST_URL, engine=engine, table_name=TABLE_NAME, )
+u = utils(logger=logger, url=LAUNCHES_LATEST_URL, engine=engine, table_name=LAUNCHES_TABLE_NAME,
+          history_url=LAUNCHES_HISTORY_URL, LAUNCHES_TABLE_NAME=LAUNCHES_TABLE_NAME, PAYLOADS_TABLE_NAME=PAYLOADS_TABLE_NAME)
 logger.info("initialized utils object")
 
-# --------------------------------
-# 1. Insert Example Data
-# --------------------------------
+# with engine.begin() as conn:
+#     conn.execute(text(f"drop table {LAUNCHES_TABLE_NAME}"))
+#     conn.execute(text(f"drop table {PAYLOADS_TABLE_NAME}"))
+#     conn.execute(text(f"drop table {LAUNCHPADS_TABLE_NAME}"))
+#     conn.execute(text(f"drop table {LANDPADS_TABLE_NAME}"))
 
-data = u.fetch_latest_spacex_data()
-flatten_data = u.flatten_json()
-flatten_data['window_col'] = flatten_data.pop('window')  # saved word in postgres need to be changed
+# batch insert
+for (table_name, url) in zip([LAUNCHES_TABLE_NAME, PAYLOADS_TABLE_NAME, LAUNCHPADS_TABLE_NAME, LANDPADS_TABLE_NAME],
+                             [LAUNCHES_HISTORY_URL, PAYLOADS_URL, LAUNCHPADS_URL, LANDPADS_URL]):
+    if table_name not in pd.read_sql("select * from pg_tables", engine)['tablename'].values:
+        data = u.fetch_spacex_data(url=url)  # populate the table with history
+        u.insert_batch_data_to_selected_table(data=data, table_name=table_name)
+    else:
+        logger.info(f"table {table_name} is already inserted to the DB ")
 
-ddl_sql = u.load_query("create_launches_table.sql")
-ddl_sql = ddl_sql.replace("table_name", TABLE_NAME)
-u.execute_query(query=ddl_sql)
+# incremental inserts
+data = u.fetch_spacex_data(latest=True)
+u.insert_incremental_to_table(data=data, table_name=LAUNCHES_TABLE_NAME)
 
-columns_names, columns_names_for_ingest = u.get_table_columns()
+# aggregate table inserts
+u.insert_agg_table(table_name=AGG_TABLE_NAME)
 
-insert_query = u.load_query("insert_new_data.sql")
-insert_query = insert_query.replace("table_name", TABLE_NAME,
-                                    ).replace("columns_names_for_ingest",
-                                              columns_names_for_ingest).replace(
-    "columns_names", columns_names)
-
-u.execute_query(query=insert_query, added_data=flatten_data)
-
-print("Inserted data into Postgres!")
-
-# --------------------------------
-# 2. Query via Trino
-# --------------------------------
-
+logger.info("start connecting to trino")
 trino_conn = connect(
     host="trino",
     port=8080,
@@ -56,17 +65,15 @@ trino_conn = connect(
     catalog="postgres",
     schema="public"
 )
+logger.info("successfully connected to trino")
 
 cursor = trino_conn.cursor()
 
-query = """
+query = f"""
 SELECT 
-    id,
-    SUM(score) AS total_amount,
-    COUNT(*) AS num_transactions
-FROM scores
-GROUP BY id
-ORDER BY total_amount DESC
+    id
+    insert_time
+FROM {LAUNCHES_TABLE_NAME}
 """
 
 cursor.execute(query)
