@@ -1,5 +1,6 @@
-select la.id,la.name,
- coalesce(pa.mass_kg, 0) + coalesce(pa2.mass_kg,0) as total_mass_kg
+select la.id,
+la.name,
+cast((coalesce(pa.mass_kg, 0) + coalesce(pa2.mass_kg,0)) as DOUBLE) as total_mass_kg
 from LAUNCHES_TABLE_NAME la
 left join PAYLOADS_TABLE_NAME pa
 on pa.id = la.payloads_0

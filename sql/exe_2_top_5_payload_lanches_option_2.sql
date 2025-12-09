@@ -2,7 +2,7 @@ with summed_mass as (
 SELECT
         la.id,
         la.name,
-        (coalesce(pa.mass_kg, 0) + coalesce(pa2.mass_kg,0))::float as total_mass
+        cast((coalesce(pa.mass_kg, 0) + coalesce(pa2.mass_kg,0)) as DOUBLE) as total_mass
     FROM LAUNCHES_TABLE_NAME la
     LEFT JOIN PAYLOADS_TABLE_NAME pa
     ON pa.id = la.payloads_0
@@ -18,4 +18,4 @@ SELECT
     total_mass
 FROM ranked_launches
 WHERE mass_rank <= 5
-ORDER BY mass_rank, total_mass DESC, id;
+ORDER BY mass_rank, total_mass DESC, id
