@@ -3,8 +3,6 @@
 In this task, I was asked to deploy a docker compose with postgres database and trino as his query engine.
 Also, to build a pipeline which will insert incremental data and create an aggregation table.
 
-## assumptions
-
 ## setup instructions
 to set up the project:
 1. clone the repo, main branch
