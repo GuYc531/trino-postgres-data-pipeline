@@ -3,7 +3,7 @@ from trino.dbapi import connect
 
 import pandas as pd
 import requests
-from sqlalchemy import text, inspect
+from sqlalchemy import inspect
 from datetime import datetime
 
 
@@ -29,9 +29,9 @@ class utils:
             if response.status_code != 200:
                 raise Exception(f"API responded with status {response.status_code}")
 
-            self.data = response.json()
+            data = response.json()
             self.logger.info("Successfully fetched latest launch.")
-            return self.data
+            return data
 
         except requests.exceptions.Timeout:
             self.logger.error("Request timed out.")
@@ -61,15 +61,6 @@ class utils:
         flatten(data)
         return out
 
-    def execute_query(self, query: str, added_data: dict = None):
-        with self.engine.begin() as conn:
-            self.logger.info(f"performing query: \n {query}")
-            if added_data:
-                conn.execute(text(query), added_data)
-            else:
-                conn.execute(text(query))
-            self.logger.info(f"successfully completed query")
-
     def load_query(self, query_name: str) -> str:
         BASE_DIR = Path(__file__).resolve().parent
         sql_file_path = BASE_DIR.parent / "sql" / f"{query_name}"
@@ -80,6 +71,7 @@ class utils:
         return sql
 
     def insert_df_to_db(self, df: pd.DataFrame, table_name: str, batch_size=5000) -> None:
+        df = df.copy()
         df['insert_time'] = datetime.now()
         try:
             df.to_sql(
@@ -94,14 +86,14 @@ class utils:
             self.logger.error(f"Error during to_sql: {e}")
 
     def insert_batch_data_to_selected_table(self, data: list, table_name: str) -> None:
-        ls = list()
+        rows = []
         for row in data:
-            flatten_data = self.flatten_json(data=row)
-            if 'window' in flatten_data.keys():
-                flatten_data['window_col'] = flatten_data.pop('window')  # saved word in postgres need to be changed
-            ls.append(flatten_data)
-        flatten_data = pd.DataFrame(ls)
-        self.insert_df_to_db(df=flatten_data, table_name=table_name)
+            flat = self.flatten_json(data=row)
+            if 'window' in flat:
+                flat['window_col'] = flat.pop('window')  # reserved word in postgres
+            rows.append(flat)
+        df = pd.DataFrame(rows)
+        self.insert_df_to_db(df=df, table_name=table_name)
         self.logger.info(f"inserted to table {table_name} {len(data)} new rows")
 
     def get_table_columns(self, table_name: str, schema: str = 'public') -> list:
@@ -117,30 +109,20 @@ class utils:
 
     def insert_incremental_to_table(self, data: dict, table_name: str) -> None:
         target_cols = self.get_table_columns(table_name)
-        flatten_data = self.flatten_json(data=data)
-        flatten_data_df = pd.DataFrame([flatten_data])
-        df_aligned = flatten_data_df.reindex(columns=target_cols)
-        df_aligned['insert_time'] = datetime.now()
-        try:
-            df_aligned.to_sql(
-                name=f'{table_name}',
-                con=self.engine,
-                if_exists='append',
-                index=False)
-            self.logger.info(f"successfully inserted new row to {table_name}")
-
-        except Exception as e:
-            self.logger.error(f"Error inserting to table {table_name}: {e}")
+        flat = self.flatten_json(data=data)
+        df = pd.DataFrame([flat]).reindex(columns=target_cols)
+        self.insert_df_to_db(df=df, table_name=table_name)
+        self.logger.info(f"successfully inserted new row to {table_name}")
 
     def insert_agg_table(self, table_name: str) -> None:
         query = self.load_query("aggregate_query.sql")
         adjusted_query = query.replace("LAUNCHES_TABLE_NAME", self.ch.LAUNCHES_TABLE_NAME).replace(
             "PAYLOADS_TABLE_NAME",
             self.ch.PAYLOADS_TABLE_NAME)
-        agg_df = pd.read_sql(adjusted_query, self.engine)
         try:
+            agg_df = pd.read_sql(adjusted_query, self.engine)
             agg_df.to_sql(
-                name=f'{table_name}',
+                name=table_name,
                 con=self.engine,
                 if_exists='append',
                 index=False)
@@ -152,7 +134,7 @@ class utils:
     def create_trino_cursor(self) -> None:
         try:
             self.logger.info("start connecting to trino")
-            trino_conn = connect(
+            self.trino_conn = connect(
                 host=self.ch.trino_host,
                 port=self.ch.trino_port,
                 user=self.ch.trino_user,
@@ -160,7 +142,7 @@ class utils:
                 schema=self.ch.trino_schema
             )
             self.logger.info("successfully connected to trino")
-            self.trino_cursor = trino_conn.cursor()
+            self.trino_cursor = self.trino_conn.cursor()
         except Exception as e:
             self.logger.error(f"Error connecting to trino: {e}")
 
@@ -179,5 +161,7 @@ class utils:
         except Exception as e:
             self.logger.error(f"Error quring trino with user {self.ch.trino_user} query {query_file_name}: {e}")
             return []
-
-
+        finally:
+            self.trino_cursor.close()
+            self.trino_conn.close()
+            self.logger.info("closed trino cursor and connection")

@@ -18,7 +18,7 @@ class configHandler:
         self.trino_user = os.getenv('trino_user')
         self.trino_catalog = os.getenv('trino_catalog')
         self.trino_schema = os.getenv('trino_schema')
-        self.latest = bool(os.getenv('latest'))
+        self.latest = os.getenv('latest', '').lower() == 'true'
         self.trino_query_file_name = os.getenv('trino_query_file_name')
         self.logger = logger
         self.logger.info('initialized environment variables')

@@ -25,8 +25,11 @@ logger.info("initialized utils object")
 
 if not ch.latest:
     # batch insert
+    existing_tables = pd.read_sql(
+        "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", engine
+    )['tablename'].values
     for (table_name, url) in zip(table_names, urls):
-        if table_name not in pd.read_sql("select * from pg_tables", engine)['tablename'].values:
+        if table_name not in existing_tables:
             data = u.fetch_spacex_data(url=url)  # populate the table with history
             u.insert_batch_data_to_selected_table(data=data, table_name=table_name)
         else:
@@ -49,3 +52,6 @@ rows = u.execute_query_with_trino(query_file_name)
 logger.info("\nAggregated results from Trino:")
 for row in rows:
     logger.info(row)
+
+engine.dispose()
+logger.info("closed database engine")
