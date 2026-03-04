@@ -175,6 +175,7 @@ class TestInsertDfToDb(unittest.TestCase):
 # insert_batch_data_to_selected_table
 # ---------------------------------------------------------------------------
 
+
 class TestInsertBatchData(unittest.TestCase):
 
     def setUp(self):
