@@ -179,3 +179,5 @@ class utils:
         except Exception as e:
             self.logger.error(f"Error quring trino with user {self.ch.trino_user} query {query_file_name}: {e}")
             return []
+
+
